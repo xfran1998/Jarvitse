@@ -26,6 +26,8 @@ const { writeFile } = require('fs');
                             {day:29, month: 9, year: 2022},
                             {day:30, month: 9, year: 2022},
                             {day:1, month: 10, year: 2022},
+                            {day:2, month: 10, year: 2022},
+                            {day:3, month: 10, year: 2022},
                           ], subjects: true, links: true }; 
 
   await getTaskCalendar(page, commands);
@@ -128,7 +130,7 @@ async function getTaskCalendar(page, commands){
 
       try {
         console.log(`month: ${month}`);
-        if (!await expect(calendar, calendar.getAttribute, 3000, month, "data-month")) {
+        if (!await expect(calendar, calendar.getAttribute, 5000, month, "data-month")) {
           console.log('Error getting month');
           break;
         }
