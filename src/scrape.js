@@ -19,7 +19,16 @@ const { writeFile } = require('fs');
   await login(page);
 
   // fetch tasks calendar
-  await getTaskCalendar(page);
+
+  // *** TEST ***
+  // days: [day_init, day_end]
+  const commands = { days: [
+                            {day:29, month: 9, year: 2022},
+                            {day:30, month: 9, year: 2022},
+                            {day:1, month: 10, year: 2022},
+                          ], subjects: true, links: true }; 
+
+  await getTaskCalendar(page, commands);
 
   // post tasks calendar
   // await postTaskCalendar(page);
@@ -54,11 +63,25 @@ async function login(page){
   // return page;
 }
 
-async function getTaskCalendar(page){
+async function getTaskCalendar(page, commands){
   // console.log(page);
-  const url=await page.url();
+  const url = await page.url();
   console.log(url);
   
+  // assert days != null
+  if(!commands){
+    console.log('Error commands');
+    return;
+  }
+
+  const { days, subjects=false, links=false } = commands;
+
+  // assert days != null
+  if(!days){
+    console.log('No days specified');
+    return;
+  }
+
   if (!url.includes('https://aulavirtual.uv.es/calendar/view.php?view=month')){
     //page should be in uv
     await page.goto('https://aulavirtual.uv.es/calendar/view.php?view=month');
@@ -69,38 +92,125 @@ async function getTaskCalendar(page){
     console.log('redirected to https://aulavirtual.uv.es/calendar/view.php?view=month');
   }
 
-  // get all day button with class=month-view-day
-  const all_days = await page.locator('[data-drop-zone="month-view-day"]');
-  // const day5 = await all_days.allTextContents()
-  const day5 = await all_days.locator('[data-day="4"]').first();
-  const inner = await day5.innerHTML();
-  // const day5 = await page.textContent('.month-view-day');
+  // *** TEST ***
+  const calendar = await page.locator(".heightcontainer .calendarwrapper");
+  const prev_month = await calendar.locator(".controls .arrow").nth(0);
+  const next_month = await calendar.locator(".controls .arrow").nth(1);
   
-  await day5.click();
+  let month = parseInt(await calendar.getAttribute("data-month"));
+  let year = parseInt(await calendar.getAttribute("data-year"));
+  console.log(`Month: ${month}, Year: ${year}`);
+
+  const all_task = [];
+  
+  console.log(days);
+
+  for (const d of days) {
+    console.log('\n*************** Getting task DAY ***************');
+    console.log(d);
+    console.log(`DAY_day: ${d.day}, DAY_Month: ${d.month}`);
+
+    // while (year != day.year) not implementing yet
+    while (!isSameDate(month, year, d.month, d.year)) {
+      console.log(`Antes: Month: ${month}, Year: ${year}`);
+      
+      // Check if have to go to next month or previous month
+      if (isPrevMonth(month, year, d.month, d.year)){
+        await prev_month.click();
+        month -= 1;
+        month == 0 ? (month = 12, year -= 1) : month;
+      }
+      else{
+        await next_month.click();
+        month += 1;
+        month == 13 ? (month = 1, year += 1) : month;
+      }
+
+      try {
+        console.log(`month: ${month}`);
+        if (!await expect(calendar, calendar.getAttribute, 3000, month, "data-month")) {
+          console.log('Error getting month');
+          break;
+        }
+      }
+      catch (err) {
+        console.log('error: '+err);
+        break;
+      }
+      
+      console.log(`Month: ${month}, Year: ${year}`);
+    }
+
+    
+    const day = await page.locator('.day.clickable').nth(d.day-1);
+    const task_day = await day.locator('li a');
+    const num_task = await task_day.count();
+    
+    console.log('\n***** Getting INFO *****');
+    for (let i = 0; i < num_task; i++) {
+      const task = await task_day.nth(i);
+
+      // get modal popup
+      await task.click();
+      const modal = await page.locator('.modal-content');
+
+      const task_info = await getInfoTask(modal, { delivery_date: true,
+                                                  subject: true,
+                                                  link: true,
+                                                  description: true });
+      all_task.push(task_info);
+
+      // close modal popup
+      await modal.locator('.close').click();
+    }
+    // all_task.push({ task: { TODO: todo, subject: null, link: null}, date: {day: d.day, month: day.month, year: d.year} });
+
+    console.log(`Current month is ok`);
+  }
+  
+  
+  // get data-month and data-year
+
+  // return;
+
+
+  // get all day button with class=month-view-day
+  // const all_days = await page.locator('[data-drop-zone="month-view-day"]');
+  // // const day5 = await all_days.allTextContents()
+  // const day5 = await all_days.locator('[data-day="4"]').first();
+  // const inner = await day5.innerHTML();
+  // const day5 = await page.textContent('.month-view-day');
+
+  // get all elements of days (".day.clickable") [0-30] --> day 1 to day 31 ordered
+  // const day = await page.locator('.day.clickable').nth(4);
+  
+  // post task
+  // await day5.click();
   // wait pop up
-  await page.waitForNavigation({ waitUntil: 'networkidle0' });
-  await page.screenshot({path: 'list_task.png'});
+  // await page.waitForNavigation({ waitUntil: 'networkidle0' });
+  // await page.screenshot({path: 'list_task.png'});
 
   // get list of .eventlist items
-  const title_tasks = await page.locator('.eventlist .name.d-inline-block').allInnerTexts();
-  const time_tasks = await page.locator('.eventlist span.dimmed_text').allInnerTexts();
-  const subject_task = await page.locator('.eventlist div.col-11 > a').allInnerTexts();
+  // const title_tasks = await page.locator('.eventlist .name.d-inline-block').allInnerTexts();
+  // const time_tasks = await page.locator('.eventlist span.dimmed_text').allInnerTexts();
+  // const subject_task = await page.locator('.eventlist div.col-11 > a').allInnerTexts();
 
-  // join title and time in object {title: '', time: ''}
-  const tasks = title_tasks.map((title, index) => {
-    return {
-      title: title,
-      time: time_tasks[index].replace('»', 'hasta').replace(',', ' a las'),
-      subject: subject_task[index]
-    }
-  });
+  // // join title and time in object {title: '', time: ''}
+  // const tasks = title_tasks.map((title, index) => {
+  //   return {
+  //     title: title,
+  //     time: time_tasks[index].replace('»', 'hasta').replace(',', ' a las'),
+  //     subject: subject_task[index]
+  //   }
+  // });
 
+  // const task_day = await day.locator('.eventname').allInnerTexts();  
   
   // print url
   console.log(await page.url(), '\n\n');
 
   // save all in json format
-  const json_list_task = JSON.stringify(tasks);
+  const json_list_task = JSON.stringify(all_task);
   console.log(json_list_task);
   
   // save json_list_task in file
@@ -110,6 +220,52 @@ async function getTaskCalendar(page){
   });
   
   console.log('\n ***** End GetTaskCalendar ***** \n');
+}
+
+async function getInfoTask(modal, options){
+  const data = {
+    todo: null,
+    delivery_date: null,
+    subject: null,
+    link: null,
+    description: null
+  }
+
+  // get todo
+  data.todo = await modal.locator('.modal-title').innerHTML();
+  
+  // get content body of the modal with all info 
+  const content = await modal.locator('.col-11');  
+  const ev = await content.nth(1).innerHTML(); 
+
+  // check if it's a user note --> second element innerHTML is 'Evento de usuario'
+  if (ev.includes('Evento de usuario')){
+    console.log('User task');
+    data.subject = 'Evento de usuario';
+    return data;
+  }
+  
+  // check is it's a course task, if not exit function
+  if (!ev.includes('Evento de curso')){
+    console.log('Error, not a course task:', ev);
+    return data;
+  }
+  
+
+  // it's a professor note
+  // get info requested
+  if (options.delivery_date)
+    // data.delivery_date = (await Promise.all([content.nth(0).locator('a').innerHTML(), 
+    //                                         content.nth(0).textContent()])).join('');
+    data.delivery_date = await content.nth(0).textContent();
+  if (options.subject)
+    data.subject = await content.nth(3).textContent();
+  if (options.link)
+    data.link = await modal.locator('.modal-footer a').getAttribute('href');
+  if (options.description)
+    data.description = await content.nth(2).textContent();
+
+  return data;
 }
 
 async function postTaskCalendar(page){
@@ -162,4 +318,37 @@ async function postTaskCalendar(page){
   console.log('fin task scrape');
 
   // return page;
+}
+
+
+
+// new file
+
+const isSameDate = (month, year, day_month, day_year) => {
+  return month == day_month && year == day_year;
+}
+
+const isPrevMonth = (month, year, day_month, day_year) => {
+  if (year > day_year) return true;
+  else if (year == day_year && month > day_month) return true;
+  else return false;
+}
+
+async function expect(obj, func, timeout, iqual, ...args) {
+  obj.func = func;
+  return new Promise((resolve, reject) => {
+    const interv = setInterval(async () => {
+      console.log('waiting for', await obj.func(...args));
+      console.log('iguals', iqual);
+      if (await obj.func(...args) == iqual) {
+        clearInterval(interv);
+        resolve();
+      }
+    }, 100);
+
+    setTimeout(() => {
+      clearInterval(interv);
+      reject('No task found');
+    }, timeout);
+  });
 }
